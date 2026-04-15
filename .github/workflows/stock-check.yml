@@ -1,0 +1,59 @@
+name: Stock check (hourly)
+
+on:
+  schedule:
+    - cron: "17 * * * *" # hourly, at :17
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run stock check
+        id: run
+        env:
+          PRODUCT_URL: "https://www.mlbshop.com/new-york-mets/womens-new-york-mets-47-royal-confetti-clean-up-adjustable-hat/t-36772175+p-4878066661119+z-9-1161232641"
+          USE_BROWSER: "1"
+        run: |
+          python check_stock.py | tee stock_status.txt
+          {
+            echo "line<<EOF"
+            tail -n 1 stock_status.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Send email alert when in stock
+        if: contains(steps.run.outputs.line, 'status=IN_STOCK')
+        env:
+          SMTP_SENDER: ${{ secrets.SMTP_SENDER }}
+          SMTP_RECEIVER: ${{ secrets.SMTP_RECEIVER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          ALERT_SUBJECT: "IN STOCK: Mets 47 Confetti Clean Up Hat"
+          ALERT_BODY: |
+            The item appears to be IN STOCK.
+
+            Product:
+            https://www.mlbshop.com/new-york-mets/womens-new-york-mets-47-royal-confetti-clean-up-adjustable-hat/t-36772175+p-4878066661119+z-9-1161232641
+
+            Latest check output:
+            ${{ steps.run.outputs.line }}
+        run: |
+          python send_email.py
