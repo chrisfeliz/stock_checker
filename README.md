@@ -27,6 +27,11 @@ Hourly stock check for an MLBShop product page, deployed via GitHub Actions.
 
 The workflow runs hourly (see cron in `.github/workflows/stock-check.yml`).
 
+## Send a test email now
+
+- Go to **Actions → Test email alert → Run workflow**.
+- If the run is green, your SMTP secrets are working.
+
 ## Local run (optional)
 
 ```bash
