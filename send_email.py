@@ -11,9 +11,14 @@ def required_env(name: str) -> str:
     return value
 
 
+def env_or_default(name: str, default: str) -> str:
+    value = os.environ.get(name, "").strip()
+    return value if value else default
+
+
 def main() -> int:
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
-    smtp_port = int(os.environ.get("SMTP_PORT", "465").strip())
+    smtp_host = env_or_default("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(env_or_default("SMTP_PORT", "465"))
     smtp_sender = required_env("SMTP_SENDER")
     smtp_password = required_env("SMTP_PASSWORD")
     smtp_receiver = required_env("SMTP_RECEIVER")
