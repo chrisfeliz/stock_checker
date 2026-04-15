@@ -25,6 +25,12 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
 
+      - name: Add randomized delay
+        run: |
+          delay="$((RANDOM % 900))"
+          echo "Sleeping for ${delay}s to jitter request timing"
+          sleep "$delay"
+
       - name: Run stock check
         id: run
         env:
