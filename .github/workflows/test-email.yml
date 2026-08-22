@@ -24,9 +24,9 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          ALERT_SUBJECT: "Test: Stock checker email alert"
+          ALERT_SUBJECT: "Test: Airbnb availability alert"
           ALERT_BODY: |
-            This is a test email from your GitHub Actions stock checker.
+            This is a test email from your GitHub Actions Airbnb availability checker.
             If you received this, SMTP secrets are configured correctly.
         run: |
           python send_email.py

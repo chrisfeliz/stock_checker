@@ -1,170 +1,128 @@
+"""Check whether an Airbnb listing can be booked for a requested stay."""
+
 import os
 import re
-import sys
 from dataclasses import dataclass
+from datetime import date, timedelta
 
-import requests
-from bs4 import BeautifulSoup
-from requests import Response
+from playwright.sync_api import Page, sync_playwright
+
+
+DEFAULT_LISTING_URL = "https://www.airbnb.com/rooms/1693855865772640392"
+DEFAULT_CHECKIN = "2026-10-09"
+DEFAULT_NIGHTS = 1
 
 
 @dataclass(frozen=True)
 class CheckResult:
     url: str
-    in_stock: bool
+    available: bool
     reason: str
     title: str | None
+    checkin: date
+    checkout: date
 
 
-DEFAULT_URL = "https://www.mlbshop.com/new-york-mets/womens-new-york-mets-47-royal-confetti-clean-up-adjustable-hat/t-36772175+p-4878066661119+z-9-1161232641"
+def requested_stay() -> tuple[date, date]:
+    """Read and validate the requested check-in date and length of stay."""
+    try:
+        checkin = date.fromisoformat(os.environ.get("CHECKIN_DATE", DEFAULT_CHECKIN))
+        nights = int(os.environ.get("NIGHTS", str(DEFAULT_NIGHTS)))
+    except ValueError as exc:
+        raise ValueError("CHECKIN_DATE must use YYYY-MM-DD and NIGHTS must be an integer") from exc
+    if nights < 1:
+        raise ValueError("NIGHTS must be at least 1")
+    return checkin, checkin + timedelta(days=nights)
 
 
-def _normalize_whitespace(s: str) -> str:
-    return re.sub(r"\s+", " ", s).strip()
+def calendar_label(day: date) -> str:
+    return f"{day.day}, {day.strftime('%A, %B %Y')}"
 
 
-def _should_fallback_to_browser(resp: Response | None, exc: Exception | None) -> bool:
-    if exc is not None:
-        return True
-    if resp is None:
-        return True
-    return resp.status_code in (401, 403, 429)
+def is_selectable(label: str | None, purpose: str) -> bool:
+    """Interpret Airbnb's accessible calendar label without relying on CSS classes."""
+    return bool(label and f"Available. Select as {purpose} date." in label)
 
 
-def fetch_html(url: str) -> str:
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-    r = requests.get(url, headers=headers, timeout=30)
-    r.raise_for_status()
-    return r.text
+def find_day_button(page: Page, target: date):
+    pattern = re.compile(rf"^{re.escape(calendar_label(target))}")
+    return page.get_by_test_id("bookit-sidebar-availability-calendar").get_by_role(
+        "button", name=pattern
+    )
 
 
-def fetch_html_playwright(url: str) -> str:
-    # Import lazily so local runs without Playwright installed still work.
-    from playwright.sync_api import sync_playwright  # type: ignore
+def move_calendar_to(page: Page, target: date) -> None:
+    """Advance Airbnb's two-month calendar until its target day is rendered."""
+    calendar = page.get_by_test_id("bookit-sidebar-availability-calendar")
+    for _ in range(24):
+        if find_day_button(page, target).count():
+            return
+        calendar.get_by_role(
+            "button", name="Move forward to switch to the next month."
+        ).click(timeout=10_000)
+        page.wait_for_timeout(250)
+    raise RuntimeError(f"Could not navigate calendar to {target.isoformat()}")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
+
+def check_availability(url: str, checkin: date, checkout: date) -> CheckResult:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
             headless=True,
-            timeout=60000,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-            ],
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
         )
         context = browser.new_context(
             locale="en-US",
             user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             ),
         )
         try:
             page = context.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            # Give client-side PDP scripts time to render availability.
-            page.wait_for_timeout(3000)
-            return page.content()
+            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+            page.get_by_role("button", name=re.compile("^Change dates;")).click(timeout=20_000)
+
+            move_calendar_to(page, checkin)
+            checkin_button = find_day_button(page, checkin)
+            checkin_label = checkin_button.get_attribute("aria-label")
+            if not is_selectable(checkin_label, "check-in"):
+                return CheckResult(
+                    url, False, checkin_label or "Check-in date was not found", page.title(), checkin, checkout
+                )
+
+            # A stay is only bookable when both endpoints can be selected.
+            checkin_button.click(timeout=10_000)
+            move_calendar_to(page, checkout)
+            checkout_button = find_day_button(page, checkout)
+            checkout_label = checkout_button.get_attribute("aria-label")
+            available = is_selectable(checkout_label, "checkout")
+            reason = (
+                "Both check-in and checkout dates are selectable"
+                if available
+                else checkout_label or "Checkout date was not found"
+            )
+            return CheckResult(url, available, reason, page.title(), checkin, checkout)
         finally:
             context.close()
             browser.close()
 
 
-def check_stock(url: str, html: str) -> CheckResult:
-    soup = BeautifulSoup(html, "html.parser")
-
-    title = None
-    if soup.title and soup.title.string:
-        title = _normalize_whitespace(soup.title.string)
-
-    text = _normalize_whitespace(soup.get_text(" "))
-    lower = text.lower()
-
-    # Heuristics for Fanatics/MLBShop PDPs. Wording varies by locale and A/B tests.
-    out_of_stock_markers = [
-        "out of stock",
-        "sold out",
-        "currently unavailable",
-        "this item is out of stock",
-    ]
-    in_stock_markers = [
-        "add to cart",
-        "add to bag",
-    ]
-
-    # Try to find a disabled add-to-cart button as a stronger signal.
-    disabled_cart_button = soup.select_one(
-        "button[disabled][data-talos='addToCart'], button[disabled][data-testid*='add'], button[disabled][name*='add']"
-    )
-
-    if any(m in lower for m in out_of_stock_markers):
-        return CheckResult(url=url, in_stock=False, reason="Detected out-of-stock text on page", title=title)
-
-    if disabled_cart_button is not None:
-        return CheckResult(url=url, in_stock=False, reason="Add-to-cart button appears disabled", title=title)
-
-    if any(m in lower for m in in_stock_markers):
-        return CheckResult(url=url, in_stock=True, reason="Detected add-to-cart text on page", title=title)
-
-    # Fallback: unknown status, treat as not in stock (and keep logs for debugging).
-    return CheckResult(url=url, in_stock=False, reason="No clear stock signal found", title=title)
-
-
 def main() -> int:
-    url = os.environ.get("PRODUCT_URL", DEFAULT_URL).strip()
+    url = os.environ.get("LISTING_URL", DEFAULT_LISTING_URL).strip()
     try:
-        use_browser = os.environ.get("USE_BROWSER", "1").strip() not in ("0", "false", "False")
-        resp: Response | None = None
-        exc: Exception | None = None
-        html: str | None = None
+        checkin, checkout = requested_stay()
+        result = check_availability(url, checkin, checkout)
+    except Exception as exc:
+        message = (re.sub(r"\s+", " ", str(exc)).strip() or exc.__class__.__name__)[:500]
+        print(f"status=ERROR reason={message} url={url}")
+        return 1
 
-        if not use_browser:
-            html = fetch_html(url)
-        else:
-            try:
-                headers = {
-                    "User-Agent": (
-                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/122.0.0.0 Safari/537.36"
-                    ),
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                }
-                resp = requests.get(url, headers=headers, timeout=30)
-                if _should_fallback_to_browser(resp, None):
-                    html = fetch_html_playwright(url)
-                else:
-                    resp.raise_for_status()
-                    html = resp.text
-            except Exception as e:
-                exc = e
-                html = fetch_html_playwright(url)
-
-        if html is None:
-            raise RuntimeError("Failed to fetch HTML")
-
-        result = check_stock(url, html)
-    except Exception as e:
-        # Keep scheduled runs "green" while still emitting a greppable line.
-        msg = _normalize_whitespace(str(e)) or e.__class__.__name__
-        print(f"status=ERROR reason={msg} title=n/a url={url}")
-        return 0
-
-    # Always print a single-line, greppable status.
-    status = "IN_STOCK" if result.in_stock else "OUT_OF_STOCK"
-    print(f"status={status} reason={result.reason} title={result.title or 'n/a'} url={result.url}")
-
-    # Exit code 0 always so scheduled jobs don't get marked as failed.
+    status = "AVAILABLE" if result.available else "UNAVAILABLE"
+    print(
+        f"status={status} checkin={result.checkin.isoformat()} "
+        f"checkout={result.checkout.isoformat()} reason={result.reason} "
+        f"title={result.title or 'n/a'} url={result.url}"
+    )
     return 0
 
 
