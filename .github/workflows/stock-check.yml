@@ -1,4 +1,4 @@
-name: Stock check (every 6 hours)
+name: Airbnb availability check (every 6 hours)
 
 on:
   schedule:
@@ -31,11 +31,12 @@ jobs:
           echo "Sleeping for ${delay}s to jitter request timing"
           sleep "$delay"
 
-      - name: Run stock check
+      - name: Check Airbnb availability
         id: run
         env:
-          PRODUCT_URL: "https://www.mlbshop.com/new-york-mets/womens-new-york-mets-47-royal-confetti-clean-up-adjustable-hat/t-36772175+p-4878066661119+z-9-1161232641"
-          USE_BROWSER: "1"
+          LISTING_URL: "https://www.airbnb.com/rooms/1693855865772640392"
+          CHECKIN_DATE: "2026-10-09"
+          NIGHTS: "1"
         run: |
           python check_stock.py | tee stock_status.txt
           {
@@ -44,20 +45,22 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Send email alert when in stock
-        if: contains(steps.run.outputs.line, 'status=IN_STOCK')
+      - name: Send email alert when the stay is available
+        if: contains(steps.run.outputs.line, 'status=AVAILABLE')
         env:
           SMTP_SENDER: ${{ secrets.SMTP_SENDER }}
           SMTP_RECEIVER: ${{ secrets.SMTP_RECEIVER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          ALERT_SUBJECT: "IN STOCK: Mets 47 Confetti Clean Up Hat"
+          ALERT_SUBJECT: "AVAILABLE: Airbnb stay starting October 9"
           ALERT_BODY: |
-            The item appears to be IN STOCK.
+            The requested Airbnb stay appears to be available.
 
-            Product:
-            https://www.mlbshop.com/new-york-mets/womens-new-york-mets-47-royal-confetti-clean-up-adjustable-hat/t-36772175+p-4878066661119+z-9-1161232641
+            Listing:
+            https://www.airbnb.com/rooms/1693855865772640392
+
+            Requested stay: October 9–10, 2026
 
             Latest check output:
             ${{ steps.run.outputs.line }}

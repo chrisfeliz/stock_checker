@@ -1,55 +1,42 @@
-# stock_checker
+# Airbnb availability checker
 
-Hourly stock check for an MLBShop product page, deployed via GitHub Actions.
+Checks whether this [Highland, NY Airbnb listing](https://www.airbnb.com/rooms/1693855865772640392) can be booked for a one-night stay beginning **October 9, 2026**. GitHub Actions runs every six hours and emails you when both the check-in and checkout dates become selectable.
 
-## What it does
+The listing currently marks October 9 as checkout-only, so the alert will not fire until it becomes valid as a check-in date.
 
-- Checks the product page once per hour.
-- If it detects **IN STOCK**, it sends an email alert.
-- Uses a headless browser (Playwright) because MLBShop often blocks simple HTTP scrapers.
+## Setup
 
-## Deploy on GitHub (recommended)
+Add these GitHub Actions secrets under **Settings → Secrets and variables → Actions**:
 
-1. Create a new GitHub repo (or use an existing one).
-2. Put these files in the repo root:
-   - `check_stock.py`
-   - `requirements.txt`
-   - `.github/workflows/stock-check.yml`
-3. Push to GitHub.
-4. In GitHub, go to **Actions** and enable workflows if prompted.
-5. Add GitHub Secrets in **Settings → Secrets and variables → Actions**:
-   - `SMTP_SENDER` (sender email address)
-   - `SMTP_RECEIVER` (receiver email address)
-   - `SMTP_PASSWORD` (email/app password)
-  - Optional: `SMTP_HOST` (defaults to `smtp.gmail.com`)
-  - Optional: `SMTP_PORT` (defaults to `465`)
-6. (Optional) Click **Actions → Stock check (hourly) → Run workflow** to test immediately.
+| Secret | Required | Description |
+|---|---|---|
+| `SMTP_SENDER` | Yes | Sending email address |
+| `SMTP_RECEIVER` | Yes | Recipient email address |
+| `SMTP_PASSWORD` | Yes | Email or app password |
+| `SMTP_HOST` | No | Defaults to `smtp.gmail.com` |
+| `SMTP_PORT` | No | Defaults to `465` (SSL) |
 
-The workflow runs hourly (see cron in `.github/workflows/stock-check.yml`).
+Enable Actions if prompted. Use **Actions → Test email alert → Run workflow** to validate SMTP, or run **Airbnb availability check** manually to test the calendar check.
 
-## Send a test email now
+## Change the stay
 
-- Go to **Actions → Test email alert → Run workflow**.
-- If the run is green, your SMTP secrets are working.
+Update these values in [.github/workflows/stock-check.yml](.github/workflows/stock-check.yml):
 
-## Local run (optional)
+- `CHECKIN_DATE` — ISO date, for example `2026-10-09`
+- `NIGHTS` — number of nights, currently `1`
+- `LISTING_URL` — Airbnb listing to monitor
+
+The same values can be overridden locally:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python -m playwright install chromium
+
+export CHECKIN_DATE="2026-10-09"
+export NIGHTS=1
 python check_stock.py
 ```
 
-## Customize the URL
-
-- Update `PRODUCT_URL` in `.github/workflows/stock-check.yml`, or
-- Set a `PRODUCT_URL` environment variable locally.
-
-## Notes for Gmail
-
-- Use an **App Password** (not your normal account password) if 2FA is enabled.
-- Default transport is Gmail SMTP over SSL (`smtp.gmail.com:465`).
-- Keep all SMTP credentials in GitHub Secrets only.
-
+Airbnb can change its calendar UI or restrict automated traffic. In those cases the workflow fails visibly instead of reporting a false availability result.
