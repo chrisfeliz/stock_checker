@@ -20,7 +20,7 @@ Enable Actions if prompted. Use **Actions → Test email alert → Run workflow*
 
 ## Change the stay
 
-Update these values in [.github/workflows/stock-check.yml](.github/workflows/stock-check.yml):
+Update these values in [.github/workflows/airbnb-check.yml](.github/workflows/airbnb-check.yml):
 
 - `CHECKIN_DATE` — ISO date, for example `2026-10-09`
 - `NIGHTS` — number of nights, currently `1`
