@@ -22,14 +22,14 @@ def main() -> int:
     smtp_sender = required_env("SMTP_SENDER")
     smtp_password = required_env("SMTP_PASSWORD")
     smtp_receiver = required_env("SMTP_RECEIVER")
-    subject = os.environ.get("ALERT_SUBJECT", "Stock Alert").strip()
+    subject = os.environ.get("ALERT_SUBJECT", "Airbnb Availability Alert").strip()
     body = os.environ.get("ALERT_BODY", "").strip()
 
     msg = EmailMessage()
     msg["From"] = smtp_sender
     msg["To"] = smtp_receiver
     msg["Subject"] = subject
-    msg.set_content(body or "Stock alert")
+    msg.set_content(body or "Airbnb availability alert")
 
     context = ssl.create_default_context()
     if smtp_port == 465:

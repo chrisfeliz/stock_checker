@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from playwright.sync_api import Page, sync_playwright
 
 
+# Keep these in sync with the env values in .github/workflows/airbnb-check.yml
 DEFAULT_LISTING_URL = "https://www.airbnb.com/rooms/1693855865772640392"
 DEFAULT_CHECKIN = "2026-10-09"
 DEFAULT_NIGHTS = 1

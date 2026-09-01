@@ -11,6 +11,10 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      LISTING_URL: "https://www.airbnb.com/rooms/1693855865772640392"
+      CHECKIN_DATE: "2026-10-09"
+      NIGHTS: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -33,10 +37,6 @@ jobs:
 
       - name: Check Airbnb availability
         id: run
-        env:
-          LISTING_URL: "https://www.airbnb.com/rooms/1693855865772640392"
-          CHECKIN_DATE: "2026-10-09"
-          NIGHTS: "1"
         run: |
           python check_stock.py | tee stock_status.txt
           {
@@ -53,14 +53,14 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          ALERT_SUBJECT: "AVAILABLE: Airbnb stay starting October 9"
+          ALERT_SUBJECT: "AVAILABLE: Airbnb stay starting ${{ env.CHECKIN_DATE }}"
           ALERT_BODY: |
             The requested Airbnb stay appears to be available.
 
             Listing:
-            https://www.airbnb.com/rooms/1693855865772640392
+            ${{ env.LISTING_URL }}
 
-            Requested stay: October 9–10, 2026
+            Requested stay: ${{ env.CHECKIN_DATE }}, ${{ env.NIGHTS }} night(s)
 
             Latest check output:
             ${{ steps.run.outputs.line }}
