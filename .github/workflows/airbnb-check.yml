@@ -1,8 +1,9 @@
-name: Airbnb availability check (every 6 hours)
+name: Airbnb availability check (manual only)
 
 on:
-  schedule:
-    - cron: "17 */6 * * *" # every 6 hours, at :17
+  # Scheduled runs are turned off. Uncomment to resume checking every 6 hours.
+  # schedule:
+  #   - cron: "17 */6 * * *" # every 6 hours, at :17
   workflow_dispatch: {}
 
 permissions:
